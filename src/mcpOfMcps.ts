@@ -10,6 +10,7 @@ import { ServersRegistry } from "./serversRegistry.js";
 import { SandboxManager } from "./sandboxManager.js";
 import { MCPToolsParser } from "./mcpToolsParser.js";
 import { McpServerConnectionConfig } from "./types.js";
+import { toolDefinitions } from "./prompts.js";
 
 export class McpOfMcps {
   private mcpServer: McpServer;
@@ -45,50 +46,7 @@ export class McpOfMcps {
     // List all tools from all child servers plus our custom tools
     // Using the underlying server for low-level request handling needed for aggregation
     this.mcpServer.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      const tools = [
-        {
-          name: "get_mcps_servers_overview",
-          description: "Get an overview of all connected MCP servers and their available tools. Returns a hierarchical tree structure showing each server and its tools in the format 'serverName/toolName'. This is useful for discovering what capabilities are available across all connected MCP servers before calling specific tools.",
-          inputSchema: {
-            type: "object",
-            properties: {},
-            required: [],
-          },
-        },
-        {
-          name: "get_tools_overview",
-          description: "Get detailed description of what specific tools do and how to execute them. Input is an array of tool paths in format 'serverName/toolName' for the tools you want details for.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              toolPaths: {
-                type: "array",
-                description: "Array of tool paths in format 'serverName/toolName'",
-                items: {
-                  type: "string",
-                },
-              },
-            },
-            required: ["toolPaths"],
-          },
-        },
-        {
-          name: "run_functions_code",
-          description: "Execute JavaScript code that can call one or more MCP server tools. This is useful for composing multiple tool calls, processing results, or implementing complex logic. The code runs in a sandboxed Node.js environment with access to all connected MCP server tools via require().",
-          inputSchema: {
-            type: "object",
-            properties: {
-              code: {
-                type: "string",
-                description: "JavaScript code to execute. The code must export its result using 'module.exports'. All tool calls return Promises and must be handled properly.\n\nIMPORTANT: When using 'await', wrap your code in an async IIFE (Immediately Invoked Function Expression):\n\nmodule.exports = (async () => {\n  // your async code here\n  return result;\n})();\n\nAvailable patterns:\n\n1. Single synchronous tool call (returns Promise directly):\nconst get_forecast = require('./weather/get_forecast.cjs');\nmodule.exports = get_forecast({ latitude: 40.7128, longitude: -74.0060 });\n\n2. Multiple sequential tool calls with await (MUST use async IIFE):\nconst tool1 = require('./server1/tool1.cjs');\nconst tool2 = require('./server2/tool2.cjs');\nmodule.exports = (async () => {\n  const result1 = await tool1({ param: 'value' });\n  const result2 = await tool2({ data: result1 });\n  return { result1, result2 };\n})();\n\n3. Processing tool results with await (MUST use async IIFE):\nconst get_data = require('./api/get_data.cjs');\nmodule.exports = (async () => {\n  const response = await get_data({ id: '123' });\n  const processed = response.content[0].text.toUpperCase();\n  return { original: response, processed };\n})();\n\n4. Parallel tool calls with Promise.all (MUST use async IIFE):\nconst tool1 = require('./server1/tool1.cjs');\nconst tool2 = require('./server2/tool2.cjs');\nmodule.exports = (async () => {\n  const [result1, result2] = await Promise.all([\n    tool1({ param1: 'value1' }),\n    tool2({ param2: 'value2' })\n  ]);\n  return { result1, result2 };\n})();\n\nNotes:\n- Use relative paths starting with './' (e.g., './weather/get_forecast.cjs')\n- ALWAYS wrap code with 'await' in an async IIFE: module.exports = (async () => { ... })();\n- Return your result from the async function, don't assign to module.exports inside\n- The sandbox automatically handles Promise resolution from the IIFE",
-              },
-            },
-            required: ["code"],
-          },
-        },
-      ];
-
-      return { tools };
+      return { tools: toolDefinitions };
     });
 
     // Route tool calls to appropriate child server or handle custom tools
