@@ -1,31 +1,25 @@
+import { SERVERS_OVERVIEW_ADDITIONAL_ANS, TOOLS_OVERVIEW_ADDITIONAL_ANS } from "./prompts.js";
 import { ServerInfo } from "./types.js";
 
 /**
  * MCPToolsParser provides utilities to parse and retrieve tools from MCP servers
  */
 export class MCPToolsParser {
-  private serversInfo: Map<string, ServerInfo>;
-
-  /**
-   * Constructor
-   * @param serversInfo - Map of server information from ServersRegistry
-   */
-  constructor(serversInfo: Map<string, ServerInfo>) {
-    this.serversInfo = serversInfo;
+  constructor() {
   }
 
   /**
    * Generate a tree overview of all MCP servers and their tools
    * @returns String with format: serverName/toolName (one per line)
    */
-  getServersOverview(): string {
+  getServersOverview(serversInfo: Map<string, ServerInfo>): string {
     const lines: string[] = [];
 
     // Iterate through all servers
-    for (const [serverName, serverInfo] of this.serversInfo) {
+    for (const [serverName, serverInfo] of serversInfo) {
       const serverInstructions = serverInfo.client.getInstructions();
       if (serverInstructions) {
-        lines.push(`# ${serverName} mcp server nstructions: ${serverInstructions}`);
+        lines.push(`# ${serverName} mcp server instructions: ${serverInstructions}`);
       }
       // For each tool in the server, create a path line
       for (const tool of serverInfo.tools) {
@@ -35,8 +29,8 @@ export class MCPToolsParser {
 
     // Sort for consistent output
     lines.sort();
-
-    return lines.join("\n");
+    const servicesOverView = lines.join(`\n`)
+    return `${servicesOverView}\n\n${SERVERS_OVERVIEW_ADDITIONAL_ANS}`;
   }
 
   /**
@@ -44,7 +38,7 @@ export class MCPToolsParser {
    * @param toolPaths - Array of tool paths in format: "serverName/toolName"
    * @returns JSON stringified array of tools with details
    */
-  getToolsOverview(toolPaths: string[]): string {
+  getToolsOverview(serversInfo: Map<string, ServerInfo>, toolPaths: string[]): string {
     const tools: any[] = [];
 
     for (const toolPath of toolPaths) {
@@ -58,7 +52,7 @@ export class MCPToolsParser {
       const [serverName, toolName] = parts;
 
       // Look up the server
-      const serverInfo = this.serversInfo.get(serverName);
+      const serverInfo = serversInfo.get(serverName);
       if (!serverInfo) {
         throw new Error(`Error: Server '${serverName}' not found`);
       }
@@ -79,6 +73,6 @@ module.exports = ${tool.title}({ /* your parameters here */ });`;
       }
     }
 
-    return JSON.stringify(tools);
+    return `${JSON.stringify(tools)}\n\n ${TOOLS_OVERVIEW_ADDITIONAL_ANS}`;
   }
 }

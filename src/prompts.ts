@@ -9,44 +9,95 @@ import { Tool } from "@modelcontextprotocol/sdk/types.js";
  * 3. Execution - Run custom JavaScript code that composes multiple tool calls
  */
 
-export const toolDefinitions: Tool[] = [
+export const SERVERS_OVERVIEW_ADDITIONAL_ANS = `
+Note: If you want to use any tools from the list first find out how to use in using the "get_tools_overview" tool.
+`
+export const TOOLS_OVERVIEW_ADDITIONAL_ANS = `
+Note:\n - If you want to excute tool use the "run_functions_code"\n - Try to create code that use all the tools that need, specily if for example tool_a input go to tool_b.
+`
+export const TOOL_DEFINITIONS: Tool[] = [
   {
-    name: "get_mcps_servers_overview",
-    description: `Discover all connected MCP servers and their available tools in this aggregated environment.
+    name: "semantic_search_tools",
+    description: `Semantically search for tools based on natural language descriptions. Returns the most relevant tools ranked by similarity score.
 
-      This is a DISCOVERY tool that shows you the complete landscape of connected servers and their capabilities. Use this first to understand what's available before diving into specific tools.
+      This is a SEMANTIC DISCOVERY tool that helps you find tools when you know what you want to do but don't know which tools to use.
 
-      Returns:
-      - A hierarchical list of all connected servers
-      - Server instructions (if provided by the server)
-      - All tools in format 'serverName/toolName' (one per line)
+      Input:
+      - query: Natural language description of what you're looking for
+      - limit: Maximum number of results to return (default: 5)
+
+      Returns (as JSON array):
+      - serverName: The MCP server providing this tool
+      - toolName: The name of the tool
+      - description: Tool's description
+      - similarityScore: Relevance score (0.0 to 1.0, higher is more relevant)
+      - fullPath: Complete tool path as 'serverName/toolName'
 
       Use cases:
-      - Initial exploration: "What servers are connected and what can they do?"
-      - Finding tools: "Which server provides weather functionality?"
-      - Complex multi-tool scenarios: "I need to download a file from Google Drive and send it via Slack"
-      - Cross-server automation: "I want to fetch data from a database, generate a chart, and email it"
-      - Integration discovery: "I need to monitor weather conditions and update a spreadsheet when temperature drops"
+      - Finding relevant tools: "tools for sending emails"
+      - Capability discovery: "what can I use for file management"
+      - Task-based search: "tools to query databases"
+      - Intent matching: "I need to send notifications"
+      - Workflow planning: "tools for processing images"
 
-      Example output:
-      # google_drive mcp server instructions: Access and manage Google Drive files
-      google_drive/download_file
-      google_drive/list_files
-      google_drive/upload_file
-      # slack mcp server instructions: Send messages and manage Slack workspaces
-      slack/send_message
-      slack/create_channel
-      slack/upload_file
-      # database mcp server instructions: Query and manage databases
-      database/execute_query
-      database/list_tables`,
+      Example queries and expected results:
+      
+      Query: "tools for sending messages"
+      Returns:
+      [
+        {
+          "serverName": "slack",
+          "toolName": "send_message",
+          "description": "Send a message to a Slack channel",
+          "similarityScore": "0.892",
+          "fullPath": "slack/send_message"
+        },
+        {
+          "serverName": "email",
+          "toolName": "send_email",
+          "description": "Send an email message",
+          "similarityScore": "0.854",
+          "fullPath": "email/send_email"
+        }
+      ]
+
+      Query: "file operations"
+      Returns:
+      [
+        {
+          "serverName": "google_drive",
+          "toolName": "download_file",
+          "description": "Download a file from Google Drive",
+          "similarityScore": "0.823",
+          "fullPath": "google_drive/download_file"
+        },
+        {
+          "serverName": "google_drive",
+          "toolName": "upload_file",
+          "description": "Upload a file to Google Drive",
+          "similarityScore": "0.819",
+          "fullPath": "google_drive/upload_file"
+        }
+      ]
+
+      After finding relevant tools with this search, use 'get_tools_overview' to get their detailed schemas and usage examples.`,
     inputSchema: {
       type: "object",
-      properties: {},
-      required: [],
-    },
+      properties: {
+        query: {
+          type: "string",
+          description: "Natural language description of what you're looking for (e.g., 'tools for sending emails', 'file management tools', 'database operations')"
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of results to return (default: 5)",
+          default: 5
+        }
+      },
+      required: ["query"]
+    }
   },
-  {
+    {
     name: "get_tools_overview",
     description: `Get comprehensive documentation for specific tools including schemas, parameters, and usage examples.
 
@@ -211,3 +262,26 @@ export const toolDefinitions: Tool[] = [
     },
   },
 ];
+
+
+export function getServersOverviewToolDefinition(serversOverView: string): Tool{
+  return {
+    name: "get_mcps_servers_overview",
+    description: `
+      Discover all connected MCP servers and their available tools in this aggregated environment.
+      This is a DISCOVERY tool that shows you the complete landscape of connected servers and their capabilities. Use this first to understand what's available before diving into specific tools.
+
+      The following description include:
+      - A hierarchical list of all connected servers
+      - Server instructions (if provided by the server)
+      - All tools in format 'serverName/toolName' (one per line)
+      
+      ${serversOverView}
+      `,
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: [],
+    }
+  }
+}

@@ -15,3 +15,11 @@ export interface ServerInfo {
   client: Client;
   tools: Tool[];
 }
+
+// Vector store types
+export interface VectorSearchResult {
+  serverName: string;
+  toolName: string;
+  description: string;
+  score: number;
+}

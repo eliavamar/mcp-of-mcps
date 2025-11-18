@@ -4,13 +4,15 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import { MCPConnection } from "./mcpConnection.js";
 import { ServersRegistry } from "./serversRegistry.js";
 import { SandboxManager } from "./sandboxManager.js";
 import { MCPToolsParser } from "./mcpToolsParser.js";
 import { McpServerConnectionConfig } from "./types.js";
-import { toolDefinitions } from "./prompts.js";
+import { getServersOverviewToolDefinition, TOOL_DEFINITIONS } from "./prompts.js";
+import { VectorStore } from "./vectorStore.js";
 
 export class McpOfMcps {
   private mcpServer: McpServer;
@@ -18,13 +20,16 @@ export class McpOfMcps {
   private sandboxManager: SandboxManager;
   private mcpConnection: MCPConnection;
   private serversRegistry: ServersRegistry;
-  private toolsParser: MCPToolsParser | null = null;
+  private toolsParser: MCPToolsParser;
+  private vectorStore: VectorStore;
 
   constructor(config: McpServerConnectionConfig[]) {
     this.config = config;
     this.mcpConnection = new MCPConnection();
     this.serversRegistry = new ServersRegistry(this.mcpConnection);
     this.sandboxManager = new SandboxManager();
+    this.toolsParser = new MCPToolsParser();
+    this.vectorStore = new VectorStore();
     this.mcpServer = new McpServer(
       {
         name: "mcp-of-mcps",
@@ -37,8 +42,6 @@ export class McpOfMcps {
         instructions: ""
       }
     );
-
-
     this.setupHandlers();
   }
 
@@ -46,7 +49,10 @@ export class McpOfMcps {
     // List all tools from all child servers plus our custom tools
     // Using the underlying server for low-level request handling needed for aggregation
     this.mcpServer.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      return { tools: toolDefinitions };
+      const serversOverViewTool: Tool =  getServersOverviewToolDefinition(this.toolsParser.getServersOverview(this.serversRegistry.getAllServers()));
+      
+      const tools = [...TOOL_DEFINITIONS, serversOverViewTool];
+      return { tools: tools };
     });
 
     // Route tool calls to appropriate child server or handle custom tools
@@ -55,18 +61,7 @@ export class McpOfMcps {
 
       // Handle our custom tools
       if (name === "get_mcps_servers_overview") {
-        if (!this.toolsParser) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: "Error: Tools parser not initialized. Please wait for the server to fully start.",
-              },
-            ],
-          };
-        }
-
-        const overview = this.toolsParser.getServersOverview();
+        const overview = this.toolsParser.getServersOverview(this.serversRegistry.getAllServers());
         return {
           content: [
             {
@@ -78,17 +73,6 @@ export class McpOfMcps {
       }
 
       if (name === "get_tools_overview") {
-        if (!this.toolsParser) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: "Error: Tools parser not initialized. Please wait for the server to fully start.",
-              },
-            ],
-          };
-        }
-
         const toolPaths = (args as { toolPaths: string[] }).toolPaths;
         if (!Array.isArray(toolPaths)) {
           return {
@@ -101,7 +85,7 @@ export class McpOfMcps {
           };
         }
 
-        const toolsJson = this.toolsParser.getToolsOverview(toolPaths);
+        const toolsJson = this.toolsParser.getToolsOverview(this.serversRegistry.getAllServers(), toolPaths);
         return {
           content: [
             {
@@ -110,6 +94,52 @@ export class McpOfMcps {
             },
           ],
         };
+      }
+
+      if (name === "semantic_search_tools") {
+        const { query, limit = 5 } = args as { query: string; limit?: number };
+        
+        if (typeof query !== "string") {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Error: query must be a string",
+              },
+            ],
+          };
+        }
+
+        try {
+          const results = await this.vectorStore.search(query, limit);
+          
+          const formattedResults = results.map(r => ({
+            serverName: r.serverName,
+            toolName: r.toolName,
+            description: r.description,
+            similarityScore: r.score.toFixed(3),
+            fullPath: `${r.serverName}/${r.toolName}`
+          }));
+
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(formattedResults, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Error searching tools: ${errorMessage}`,
+              },
+            ],
+          };
+        }
       }
 
       if (name === "run_functions_code") {
@@ -178,8 +208,9 @@ export class McpOfMcps {
     // Register all connected servers in the registry
     await this.serversRegistry.registerAllServers();
 
-    // Initialize tools parser with registered servers
-    this.toolsParser = new MCPToolsParser(this.serversRegistry.getAllServers());
+    // Initialize and index tools in vector store
+    await this.vectorStore.initialize();
+    await this.vectorStore.indexTools(this.serversRegistry.getAllServers());
 
     // Setup sandbox with all server tools
     this.sandboxManager.createSendBox(this.serversRegistry.getAllServers());

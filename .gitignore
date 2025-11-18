@@ -2,3 +2,5 @@ node_modules
 build
 .sandbox
 package-lock.json
+.vector-index
+.embeddings-cache
