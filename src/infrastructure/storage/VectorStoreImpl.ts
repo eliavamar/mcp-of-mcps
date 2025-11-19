@@ -72,7 +72,7 @@ export class VectorStoreImpl implements IVectorStore {
         // Store metadata
         this.toolsMap.set(id, {
           serverName,
-          toolName: tool.name,
+          toolName: tool.title || tool.name,
           description,
           tool,
         });
