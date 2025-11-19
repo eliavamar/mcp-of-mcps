@@ -1,7 +1,7 @@
-import { LocalIndex } from 'vectra';
-import { Tool } from '@modelcontextprotocol/sdk/types.js';
-import { ServerInfo } from './types.js';
-import { EmbeddingsManager } from './embeddingsManager.js';
+import { CreateIndexConfig, LocalIndex } from 'vectra';
+import { ServerInfo, ToolWithMetadata, SearchResult } from '../../domain/types.js';
+import { IVectorStore } from '../../interfaces/IVectorStore.js';
+import { EmbeddingsManager } from './EmbeddingsManager.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -11,34 +11,23 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-export interface ToolWithMetadata {
-  serverName: string;
-  toolName: string;
-  description: string;
-  tool: Tool;
-}
-
-export interface SearchResult {
-  serverName: string;
-  toolName: string;
-  description: string;
-  score: number;
-  tool: Tool;
-}
-
-export class VectorStore {
+/**
+ * VectorStoreImpl provides vector-based semantic search for tools
+ * Implements dependency injection pattern for better testability
+ */
+export class VectorStoreImpl implements IVectorStore {
   private index: LocalIndex;
   private embeddingsManager: EmbeddingsManager;
   private toolsMap: Map<string, ToolWithMetadata> = new Map();
   private initialized: boolean = false;
   private indexPath: string;
 
-  constructor(indexPath: string = '.vector-index') {
+  constructor(embeddingsManager: EmbeddingsManager, indexPath: string = '.vector-index') {
     // Resolve path relative to the build directory (one level up to project root)
     // This ensures the index is created in the project directory regardless of cwd
-    this.indexPath = path.resolve(__dirname, '..', indexPath);
+    this.indexPath = path.resolve(__dirname, '..', '..', '..', indexPath);
     this.index = new LocalIndex(this.indexPath);
-    this.embeddingsManager = new EmbeddingsManager();
+    this.embeddingsManager = embeddingsManager;
   }
 
   /**
@@ -49,28 +38,11 @@ export class VectorStore {
 
     // Initialize embeddings manager
     await this.embeddingsManager.initialize();
-
-    // Ensure the index directory exists before doing anything
-    await fs.mkdir(this.indexPath, { recursive: true });
-
-    // Check if index.json exists in the directory
-    let indexExists = false;
-    try {
-      await fs.access(`${this.indexPath}/index.json`);
-      indexExists = true;
-    } catch {
-      // index.json doesn't exist
-      indexExists = false;
-    }
-
-    // Create or load index
-    if (!indexExists) {
-      await this.index.createIndex();
-      console.error('✓ Created new vector index');
-    } else {
-      // Index exists, vectra will load it automatically
-      console.error('✓ Loaded existing vector index');
-    }
+    const createIndexConfig: CreateIndexConfig = {version: 1, deleteIfExists: true}
+    // Create indexing
+    await this.index.createIndex(createIndexConfig);
+    
+    console.error('✓ Created new vector index');
 
     this.initialized = true;
   }
@@ -122,8 +94,6 @@ export class VectorStore {
 
     console.error(`✓ Indexed ${indexed} tools`);
 
-    // Save embeddings cache
-    await this.embeddingsManager.saveCache();
   }
 
   /**
@@ -138,7 +108,7 @@ export class VectorStore {
     const queryEmbedding = await this.embeddingsManager.embed(query);
 
     // Search vector index
-    const results = await this.index.queryItems(queryEmbedding, query, topK);
+    const results = await this.index.queryItems(queryEmbedding, topK);
 
     // Map results to SearchResult format
     return results.map((result) => {
@@ -189,16 +159,14 @@ export class VectorStore {
       });
     }
 
-    await this.embeddingsManager.saveCache();
   }
 
   /**
    * Get statistics about the vector store
    */
-  getStats(): { totalTools: number; cachedEmbeddings: number } {
+  getStats(): { totalTools: number;  } {
     return {
       totalTools: this.toolsMap.size,
-      cachedEmbeddings: this.embeddingsManager.getCacheSize(),
     };
   }
 }

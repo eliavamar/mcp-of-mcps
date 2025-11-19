@@ -1,22 +1,30 @@
-import { SERVERS_OVERVIEW_ADDITIONAL_ANS, TOOLS_OVERVIEW_ADDITIONAL_ANS } from "./prompts.js";
-import { ServerInfo } from "./types.js";
+import { ServerInfo } from "../../domain/types.js";
+import { IToolsParser } from "../../interfaces/IToolsParser.js";
+
+// Import prompt constants
+const SERVERS_OVERVIEW_ADDITIONAL_ANS = `
+Note: If you want to use any tools from the list first find out how to use in using the "get_tools_overview" tool.
+`;
+
+const TOOLS_OVERVIEW_ADDITIONAL_ANS = `
+Note:\n - If you want to excute tool use the "run_functions_code"\n - Try to create code that use all the tools that need, specily if for example tool_a input go to tool_b.
+`;
 
 /**
- * MCPToolsParser provides utilities to parse and retrieve tools from MCP servers
+ * ToolsParserService provides utilities to parse and retrieve tools from MCP servers
+ * Implements dependency injection pattern for better testability
  */
-export class MCPToolsParser {
-  constructor() {
-  }
-
+export class ToolsParserService implements IToolsParser {
   /**
    * Generate a tree overview of all MCP servers and their tools
-   * @returns String with format: serverName/toolName (one per line)
+   * @param servers - Map of server information
+   * @returns Formatted string with server overview
    */
-  getServersOverview(serversInfo: Map<string, ServerInfo>): string {
+  getServersOverview(servers: Map<string, ServerInfo>): string {
     const lines: string[] = [];
 
     // Iterate through all servers
-    for (const [serverName, serverInfo] of serversInfo) {
+    for (const [serverName, serverInfo] of servers) {
       const serverInstructions = serverInfo.client.getInstructions();
       if (serverInstructions) {
         lines.push(`# ${serverName} mcp server instructions: ${serverInstructions}`);
@@ -29,17 +37,18 @@ export class MCPToolsParser {
 
     // Sort for consistent output
     lines.sort();
-    const servicesOverView = lines.join(`\n`)
+    const servicesOverView = lines.join(`\n`);
     return `${servicesOverView}\n\n${SERVERS_OVERVIEW_ADDITIONAL_ANS}`;
   }
 
   /**
-   * Get detailed overview for specific tools by their paths and return as JSON string
-   * @param toolPaths - Array of tool paths in format: "serverName/toolName"
+   * Get detailed overview for specific tools by their paths
+   * @param servers - Map of server information
+   * @param toolPaths - Array of tool paths in format "serverName/toolName"
    * @returns JSON stringified array of tools with details
    */
-  getToolsOverview(serversInfo: Map<string, ServerInfo>, toolPaths: string[]): string {
-    const tools: any[] = [];
+  getToolsOverview(servers: Map<string, ServerInfo>, toolPaths: string[]): string {
+    const tools = [];
 
     for (const toolPath of toolPaths) {
       // Parse the path to extract server name and tool name
@@ -52,10 +61,11 @@ export class MCPToolsParser {
       const [serverName, toolName] = parts;
 
       // Look up the server
-      const serverInfo = serversInfo.get(serverName);
+      const serverInfo = servers.get(serverName);
       if (!serverInfo) {
         throw new Error(`Error: Server '${serverName}' not found`);
       }
+      
       // Find the tool
       const tool = serverInfo.tools.find((t) => t.title === toolName);
       if (tool) {
@@ -66,7 +76,8 @@ module.exports = ${tool.title}({ /* your parameters here */ });`;
         // Add the tool with example usage property
         tools.push({
           ...tool,
-          exampleUsage
+          exampleUsage,
+          name: tool.title
         });
       } else {
         console.error(`Error: Tool '${toolName}' not found in server '${serverName}'`);

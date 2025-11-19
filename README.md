@@ -17,9 +17,35 @@ When models see too much irrelevant information, they're more likely to get conf
 
 ## The Solution
 
-MCP of MCPs is a meta-server that provides three powerful tools for efficient agent orchestration:
+MCP of MCPs is a meta-server that provides four powerful tools for efficient agent orchestration:
 
-### Tool 1: `get_mcps_servers_overview`
+### Tool 1: `semantic_search_tools`
+**Semantic Discovery Tool** - Search tools by describing the task you want to accomplish. Instead of browsing all of tool names—or when tool names don't clearly indicate what they do—just describe your intent in plain English (e.g., "send notifications", "query database", "process images") and get back only the most relevant tools instantly. This provides a fast and lightweight approach to investigate what tools are available across all connected servers without loading any full tool definitions.
+
+```javascript
+// Search by task/intent, not by tool names:
+// Input: { query: "send notifications to a channel", limit: 5 }
+// Returns only relevant matches (ranked by similarity):
+// [
+//   {
+//     serverName: "slack",
+//     toolName: "post_message",
+//     description: "Post a message to a Slack channel",
+//     similarityScore: 0.94,
+//     fullPath: "slack/post_message"
+//   },
+// ....
+//   // Only 5 most relevant tools returned - fast and lightweight!
+// ]
+```
+
+**Perfect for quick investigation:**
+- Describe what you need to do, not what tool you need
+- Get instant results without loading full schemas
+- Discover capabilities across all servers in milliseconds
+- No token overhead - just lightweight tool names and descriptions
+
+### Tool 2: `get_mcps_servers_overview`
 **Discovery Tool** - This tool returns only tool names without full schemas, giving agents a lightweight overview in seconds instead of loading hundreds of detailed definitions upfront. By showing just what's available without overwhelming details, it prevents confusion and hallucinations while eliminating loading delays.
 
 ```javascript
@@ -32,7 +58,7 @@ MCP of MCPs is a meta-server that provides three powerful tools for efficient ag
 ```
 
 
-### Tool 2: `get_tools_overview`  
+### Tool 3: `get_tools_overview`
 **Introspection Tool** - Load only the tools you actually need instead of all 30+ tools, saving thousands of tokens through selective loading. This on-demand approach provides faster responses and focused context that reduces confusion and improves accuracy.
 
 
@@ -45,7 +71,7 @@ MCP of MCPs is a meta-server that provides three powerful tools for efficient ag
 ```
 
 
-### Tool 3: `run_functions_code`
+### Tool 4: `run_functions_code`
 **Execution Tool** - Data flows directly between tools without round-trips through the model, so a 2MB file transfer uses ~100 tokens instead of 50,000+. The model only sees clean final results instead of noisy intermediate data, executing complex workflows in one shot without processing delays.
 
 ```javascript
@@ -58,7 +84,7 @@ MCP of MCPs is a meta-server that provides three powerful tools for efficient ag
 
 ## How The Full Flow Solves All Problems
 
-The three tools work together through **progressive disclosure**: first, `get_mcps_servers_overview` returns just tool names (not full schemas), so the model scans a simple list instead of parsing 500KB of definitions. Next, `get_tools_overview` loads only the 2-3 tools you need instead of all 30+, reducing tokens and giving the model focused context without confusing irrelevant options. Finally, `run_functions_code` executes workflows where data flows directly between tools in memory—intermediate results not get serialized into tokens, they stay as native objects passing from one tool to another while the model only sees the final result. This pattern cuts token usage, speeds up execution by avoiding unnecessary model processing, and eliminates hallucinations by showing only relevant information at each step.
+When you need to accomplish a task, start by using `get_mcps_servers_overview` to get a lightweight list of all available tool names across servers—this gives you a quick scan of what's available without loading any schemas. If you can't find the tools you need for your task or if tool names aren't clear, use `semantic_search_tools` to search by describing your intent in plain English (e.g., "send notifications to a channel"), which uses AI-powered semantic understanding to instantly return only the most relevant tools ranked by similarity. Once you've identified the specific tools you need, use `get_tools_overview` to load only those tool definitions with their full schemas and parameters—saving thousands of tokens by avoiding irrelevant tools and giving the model focused context. Finally, use `run_functions_code` to execute your workflow where data flows directly between tools in memory, keeping intermediate results as native objects rather than serializing them into tokens, with only the final result returned to the model. This pattern dramatically cuts token usage, speeds up execution by avoiding unnecessary model processing, and eliminates hallucinations by showing only relevant information at each step.
 
 ### Real-World Example
 

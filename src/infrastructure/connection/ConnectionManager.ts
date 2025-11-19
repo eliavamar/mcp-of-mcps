@@ -1,17 +1,14 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { McpServerConnectionConfig } from "./types.js";
+import { McpServerConnectionConfig } from "../../domain/types.js";
+import { IConnectionManager } from "../../interfaces/IConnectionManager.js";
 
 /**
- * MCPConnection handles connections to multiple MCP child servers
+ * ConnectionManager handles connections to multiple MCP child servers
+ * Implements dependency injection pattern for better testability
  */
-export class MCPConnection {
+export class ConnectionManager implements IConnectionManager {
   private connections: Map<string, Client> = new Map();
-
-  /**
-   * Constructor to create a new MCPConnection instance
-   */
-  constructor() {}
 
   /**
    * Create a new connection to an MCP server
@@ -49,14 +46,12 @@ export class MCPConnection {
       
       // Store connection
       this.connections.set(config.name, client);
-      
 
       console.error(`✓ Connected to ${config.name}`);
       return client;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`✗ Failed to connect to ${config.name}:`, error);
-      throw new Error(`Failed to connect to ${config.name}: ${errorMessage}`);
+      this.handleConnectionError(config.name, error as Error);
+      throw error;
     }
   }
 
@@ -83,5 +78,16 @@ export class MCPConnection {
    */
   getConnectionCount(): number {
     return this.connections.size;
+  }
+
+  /**
+   * Handle connection errors consistently
+   * @param serverName - Name of the server
+   * @param error - Error that occurred
+   */
+  private handleConnectionError(serverName: string, error: Error): void {
+    const errorMessage = error.message || String(error);
+    console.error(`✗ Failed to connect to ${serverName}:`, error);
+    throw new Error(`Failed to connect to ${serverName}: ${errorMessage}`);
   }
 }

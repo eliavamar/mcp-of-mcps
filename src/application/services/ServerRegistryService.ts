@@ -1,23 +1,31 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { MCPConnection } from "./mcpConnection.js";
-import { ServerInfo } from "./types.js";
-import { convertToolName } from "./utils.js";
+import { ServerInfo } from "../../domain/types.js";
+import { IServerRegistry } from "../../interfaces/IServerRegistry.js";
+import { IConnectionManager } from "../../interfaces/IConnectionManager.js";
 
 /**
- * ServersRegistry manages server connections, clients, and tools
- * Provides a centralized way to access and manage MCP server information
+ * Utility function to convert tool names (replace hyphens with underscores)
  */
-export class ServersRegistry {
+function convertToolName(input: string): string {
+  return input.replace(/-/g, "_");
+}
+
+/**
+ * ServerRegistryService manages server connections, clients, and tools
+ * Provides a centralized way to access and manage MCP server information
+ * Implements dependency injection pattern for better testability
+ */
+export class ServerRegistryService implements IServerRegistry {
   private serversInfo: Map<string, ServerInfo> = new Map();
-  private mcpConnection: MCPConnection;
+  private connectionManager: IConnectionManager;
 
   /**
    * Constructor
-   * @param mcpConnection - The MCPConnection instance managing connections
+   * @param connectionManager - The connection manager instance
    */
-  constructor(mcpConnection: MCPConnection) {
-    this.mcpConnection = mcpConnection;
+  constructor(connectionManager: IConnectionManager) {
+    this.connectionManager = connectionManager;
   }
 
   /**
@@ -30,25 +38,24 @@ export class ServersRegistry {
       throw new Error(`Server '${serverName}' is already registered`);
     }
 
-    const client = this.mcpConnection.getConnection(serverName);
+    const client = this.connectionManager.getConnection(serverName);
     if (!client) {
       throw new Error(`Connection for server '${serverName}' not found`);
     }
 
     try {
       // Fetch tools from the server
-      const response = await client.listTools();
-      // Convert the tool name to ignore syntax error when excute js code in sendbox
-      response.tools.forEach(tool => tool.title = convertToolName(tool.name))
+      const tools = await this.fetchServerTools(client);
+      
       // Store server info
       const serverInfo: ServerInfo = {
         name: serverName,
         client: client,
-        tools: response.tools,
+        tools: tools,
       };
 
       this.serversInfo.set(serverName, serverInfo);
-      console.error(`✓ Registered server '${serverName}' with ${response.tools.length} tools`);
+      console.error(`✓ Registered server '${serverName}' with ${tools.length} tools`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(`✗ Failed to register server '${serverName}':`, error);
@@ -57,10 +64,11 @@ export class ServersRegistry {
   }
 
   /**
-   * Register all connected servers from MCPConnection
+   * Register all servers from configurations
+   * Creates connections and registers each server
    */
   async registerAllServers(): Promise<void> {
-    const connections = this.mcpConnection.getAllConnections();
+    const connections = this.connectionManager.getAllConnections();
     const registrationPromises: Promise<void>[] = [];
 
     for (const [serverName] of connections) {
@@ -73,6 +81,19 @@ export class ServersRegistry {
 
     await Promise.all(registrationPromises);
     console.error(`✓ Registered ${this.serversInfo.size} servers`);
+  }
+
+  /**
+   * Create connections for all servers in configuration
+   * @param configs - Array of server configurations
+   */
+  async createConnections(configs: Array<{ name: string; command: string; args: string[]; env?: Record<string, string> }>): Promise<void> {
+    const connectionPromises = configs.map(config =>
+      this.connectionManager.createConnection(config).catch(error => {
+        console.error(`Failed to create connection for ${config.name}:`, error);
+      })
+    );
+    await Promise.all(connectionPromises);
   }
 
   /**
@@ -102,19 +123,17 @@ export class ServersRegistry {
   }
 
   /**
-   * Get all server names
-   * @returns Array of server names
+   * Get a tool by name from a specific server
+   * @param serverName - Name of the server
+   * @param toolName - Name of the tool
+   * @returns Tool or undefined if not found
    */
-  getServerNames(): string[] {
-    return Array.from(this.serversInfo.keys());
-  }
-
-  /**
-   * Get total number of registered servers
-   * @returns Number of registered servers
-   */
-  getServerCount(): number {
-    return this.serversInfo.size;
+  getTool(serverName: string, toolName: string): Tool | undefined {
+    const serverInfo = this.serversInfo.get(serverName);
+    if (!serverInfo) {
+      throw new Error(`Server '${serverName}' not found in registry`);
+    }
+    return serverInfo.tools.find((tool) => tool.name === toolName);
   }
 
   /**
@@ -130,33 +149,14 @@ export class ServersRegistry {
   }
 
   /**
-   * Get a tool by name from a specific server
-   * @param serverName - Name of the server
-   * @param toolName - Name of the tool
-   * @returns Tool or undefined if not found
+   * Fetch tools from a server and convert tool names
+   * @param client - The client connection
+   * @returns Array of tools with converted names
    */
-  getTool(serverName: string, toolName: string): Tool | undefined {
-    const serverInfo = this.serversInfo.get(serverName);
-    if (!serverInfo) {
-      throw new Error(`Server '${serverName}' not found in registry`);
-    }
-    return serverInfo.tools.find((tool) => tool.name === toolName);
-  }
-
-  /**
-   * Check if a server is registered
-   * @param serverName - Name of the server
-   * @returns true if server is registered, false otherwise
-   */
-  hasServer(serverName: string): boolean {
-    return this.serversInfo.has(serverName);
-  }
-
-  /**
-   * Clear all registered servers
-   */
-  clear(): void {
-    this.serversInfo.clear();
-    console.error("✓ Cleared all registered servers");
+  private async fetchServerTools(client: Client): Promise<Tool[]> {
+    const response = await client.listTools();
+    // Convert the tool name to ignore syntax error when execute js code in sandbox
+    response.tools.forEach(tool => tool.title = convertToolName(tool.name));
+    return response.tools;
   }
 }

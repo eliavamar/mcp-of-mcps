@@ -1,6 +1,6 @@
 {
   "name": "@dbestai/mcp-of-mcps",
-  "version": "1.0.1",
+  "version": "2.0.0",
   "description": "",
   "main": "index.js",
   "bin": {
@@ -12,18 +12,29 @@
     "build": "tsc && chmod 755 build/index.js"
   },
   "keywords": [],
-  "author": "",
+  "author": "Eliav Amar",
   "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eliavamar/mcp-of-mcps.git"
+  },
   "type": "module",
-  "files": ["build"],
-
+  "files": [
+    "build"
+  ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.21.1",
-    "zod": "^3.25.76",
-    "vm2": "3.10.0"
+    "@xenova/transformers": "^2.6.0",
+    "vectra": "^0.9.0",
+    "vm2": "3.10.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@types/jest": "^29.5.0",
     "@types/node": "^24.10.0",
+    "@types/uuid": "^10.0.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
     "typescript": "^5.9.3"
   }
 }
