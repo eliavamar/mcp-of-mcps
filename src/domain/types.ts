@@ -46,3 +46,33 @@ export interface ToolWithMetadata {
 export interface SearchResult extends ToolWithMetadata {
   score: number;
 }
+
+/**
+ * Database-stored tool representation - only stores output schema
+ */
+export interface StoredTool {
+  id?: number;                    // Auto-increment primary key
+  serverName: string;             // MCP server name
+  toolName: string;               // Original tool name from server
+  outputSchema?: string;          // JSON string of output schema (optional)
+  originalOutputSchema: boolean; // Whether output schema is original from server
+  lastUpdated: number;            // Unix timestamp of last update
+}
+
+/**
+ * Tool comparison result
+ */
+export interface ToolComparisonResult {
+  hasChanges: boolean;
+  changedFields: string[];        // List of field names that changed
+  shouldUpdate: boolean;          // Whether to perform database update
+}
+
+/**
+ * Database statistics
+ */
+export interface DatabaseStats {
+  totalTools: number;
+  toolsByServer: Map<string, number>;
+  lastUpdate: number;
+}

@@ -2,6 +2,7 @@ import { McpServerConnectionConfig } from "../domain/types.js";
 import { ConnectionManager } from "../infrastructure/connection/ConnectionManager.js";
 import { VectorStoreImpl } from "../infrastructure/storage/VectorStoreImpl.js";
 import { SandboxManagerImpl } from "../infrastructure/sandbox/SandboxManagerImpl.js";
+import { ServersToolDatabaseImpl } from "../infrastructure/database/serversToolDatabaseImpl.js";
 import { ServerRegistryService } from "../application/services/ServerRegistryService.js";
 import { ToolsParserService } from "../application/services/ToolsParserService.js";
 import { ToolCallHandler } from "../application/handlers/ToolCallHandler.js";
@@ -24,9 +25,10 @@ export class AppFactory {
     const embeddingsManager = new EmbeddingsManager();
     const vectorStore = new VectorStoreImpl(embeddingsManager, '.vector-index');
     const sandboxManager = new SandboxManagerImpl('.sandbox');
+    const toolDatabase = ServersToolDatabaseImpl.getInstance();
     
     // Create application layer components
-    const serverRegistry = new ServerRegistryService(connectionManager);
+    const serverRegistry = new ServerRegistryService(connectionManager, toolDatabase);
     const toolsParser = new ToolsParserService();
     const toolCallHandler = new ToolCallHandler(
       serverRegistry,
@@ -42,7 +44,8 @@ export class AppFactory {
       serverRegistry,
       vectorStore,
       sandboxManager,
-      toolsParser
+      toolsParser,
+      toolDatabase
     );
   }
 }

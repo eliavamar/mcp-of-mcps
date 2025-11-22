@@ -4,3 +4,4 @@ build
 package-lock.json
 .vector-index
 .embeddings-cache
+.database

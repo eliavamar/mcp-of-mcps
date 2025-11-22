@@ -2,6 +2,8 @@
 
 A meta-server that aggregates multiple MCP servers and enables efficient code execution for AI agents. Reduces token usage, improving speed and reliability.
 
+**New:** Includes persistent database that automatically stores and preserves tool output schemas across sessions, ensuring consistent tool behavior even when mcps servers don't provide complete metadata.
+
 ## The Problem
 
 When AI agents connect to multiple MCP servers, they face three critical issues:
@@ -118,6 +120,7 @@ The code executes in one operation. Data flows directly between tools. Only the 
 ✅ **Reduced Hallucinations** - Model sees only relevant information  
 ✅ **Progressive Disclosure** - Load tools on-demand as needed  
 ✅ **Code Composition** - Orchestrate complex workflows with familiar JavaScript  
+✅ **Persistent Tool Metadata** - Automatically preserves tool output schemas across sessions  
 
 ## Setup
 

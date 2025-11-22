@@ -1,5 +1,5 @@
 import { McpServerConnectionConfig } from "../domain/types.js";
-
+import * as fs from "fs";
 /**
  * ConfigLoader handles loading configuration from various sources
  */
@@ -35,7 +35,6 @@ export class ConfigLoader {
     const configFileIndex = process.argv.indexOf("--config-file");
     if (configFileIndex !== -1 && process.argv[configFileIndex + 1]) {
       try {
-        const fs = require("fs");
         const configFile = process.argv[configFileIndex + 1];
         const fileContent = fs.readFileSync(configFile, "utf-8");
         return JSON.parse(fileContent);

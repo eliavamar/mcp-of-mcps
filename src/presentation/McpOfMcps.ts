@@ -10,6 +10,7 @@ import { McpServerConnectionConfig } from "../domain/types.js";
 import { IServerRegistry } from "../interfaces/IServerRegistry.js";
 import { IVectorStore } from "../interfaces/IVectorStore.js";
 import { ISandboxManager } from "../interfaces/ISandboxManager.js";
+import { IServersToolDatabase } from "../interfaces/IToolDatabase.js";
 import { ToolCallHandler } from "../application/handlers/ToolCallHandler.js";
 import { IToolsParser } from "../interfaces/IToolsParser.js";
 import { TOOL_DEFINITIONS, getServersOverviewToolDefinition } from "./prompts/PromptDefinitions.js";
@@ -28,6 +29,7 @@ export class McpOfMcps {
   private vectorStore: IVectorStore;
   private sandboxManager: ISandboxManager;
   private toolsParser: IToolsParser;
+  private toolDatabase: IServersToolDatabase;
 
   constructor(
     config: McpServerConnectionConfig[],
@@ -35,7 +37,8 @@ export class McpOfMcps {
     serverRegistry: IServerRegistry,
     vectorStore: IVectorStore,
     sandboxManager: ISandboxManager,
-    toolsParser: IToolsParser
+    toolsParser: IToolsParser,
+    toolDatabase: IServersToolDatabase
   ) {
     this.config = config;
     this.toolCallHandler = toolCallHandler;
@@ -43,6 +46,7 @@ export class McpOfMcps {
     this.vectorStore = vectorStore;
     this.sandboxManager = sandboxManager;
     this.toolsParser = toolsParser;
+    this.toolDatabase = toolDatabase;
     
     this.mcpServer = new McpServer(
       {
@@ -150,13 +154,16 @@ export class McpOfMcps {
   }
 
   /**
-   * Initialize all components (vector store, sandbox)
+   * Initialize all components (database, vector store, sandbox)
    */
   private async initializeComponents(): Promise<void> {
+    // Initialize database before creating connections
+    await this.toolDatabase.initialize();
+    
     // Create connections for all configured servers
     await this.serverRegistry.createConnections(this.config);
     
-    // Register all connected servers
+    // Register all connected servers (tools will be synced to database automatically)
     await this.serverRegistry.registerAllServers();
 
     // Initialize and index tools in vector store
@@ -165,6 +172,10 @@ export class McpOfMcps {
 
     // Setup sandbox with all server tools
     this.sandboxManager.initialize(this.serverRegistry.getAllServers());
+
+    // Log database statistics
+    const stats = this.toolDatabase.getStats();
+    console.error(`[ToolDatabase] Stats: ${stats.totalTools} tools stored`);
 
     console.error(
       `MCP Of MCPS started with ${this.serverRegistry.getAllServers().size} mcp servers`

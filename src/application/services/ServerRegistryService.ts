@@ -1,15 +1,10 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { ServerInfo } from "../../domain/types.js";
+import { ServerInfo, StoredTool } from "../../domain/types.js";
 import { IServerRegistry } from "../../interfaces/IServerRegistry.js";
 import { IConnectionManager } from "../../interfaces/IConnectionManager.js";
-
-/**
- * Utility function to convert tool names (replace hyphens with underscores)
- */
-function convertToolName(input: string): string {
-  return input.replace(/-/g, "_");
-}
+import { IServersToolDatabase } from "../../interfaces/IToolDatabase.js";
+import { convertToolName } from "../../utils.js";
 
 /**
  * ServerRegistryService manages server connections, clients, and tools
@@ -19,13 +14,16 @@ function convertToolName(input: string): string {
 export class ServerRegistryService implements IServerRegistry {
   private serversInfo: Map<string, ServerInfo> = new Map();
   private connectionManager: IConnectionManager;
+  private toolDatabase: IServersToolDatabase;
 
   /**
    * Constructor
    * @param connectionManager - The connection manager instance
+   * @param toolDatabase - The tool database instance
    */
-  constructor(connectionManager: IConnectionManager) {
+  constructor(connectionManager: IConnectionManager, toolDatabase: IServersToolDatabase) {
     this.connectionManager = connectionManager;
+    this.toolDatabase = toolDatabase;
   }
 
   /**
@@ -46,6 +44,9 @@ export class ServerRegistryService implements IServerRegistry {
     try {
       // Fetch tools from the server
       const tools = await this.fetchServerTools(client);
+      
+      // Sync tools to database
+      await this.syncToolsToDatabase(serverName, tools);
       
       // Store server info
       const serverInfo: ServerInfo = {
@@ -81,6 +82,33 @@ export class ServerRegistryService implements IServerRegistry {
 
     await Promise.all(registrationPromises);
     console.error(`✓ Registered ${this.serversInfo.size} servers`);
+
+    // Clean up orphaned servers from database
+    await this.cleanupOrphanedServers();
+  }
+
+  /**
+   * Delete servers from database that are no longer in the configuration
+   */
+  private async cleanupOrphanedServers(): Promise<void> {
+    try {
+      // Get all server names from database
+      const dbServerNames = await this.toolDatabase.getAllServerNames();
+      
+      // Get all configured server names
+      const configuredServerNames = new Set(this.serversInfo.keys());
+
+      // Check for orphaned servers
+      for (const dbServerName of dbServerNames) {
+        if (!configuredServerNames.has(dbServerName)) {
+          // Server exists in DB but not in configuration - delete it
+          console.error(`[ToolDatabase] Deleting orphaned server '${dbServerName}' from database`);
+          await this.toolDatabase.deleteServerTools(dbServerName);
+        }
+      }
+    } catch (error) {
+      console.error('[ToolDatabase] Error cleaning up orphaned servers:', error);
+    }
   }
 
   /**
@@ -158,5 +186,62 @@ export class ServerRegistryService implements IServerRegistry {
     // Convert the tool name to ignore syntax error when execute js code in sandbox
     response.tools.forEach(tool => tool.title = convertToolName(tool.name));
     return response.tools;
+  }
+
+  /**
+   * Sync tools to database with comparison logic and orphan deletion
+   * Only stores output schema
+   * @param serverName - The server name
+   * @param tools - The tools to sync
+   */
+  private async syncToolsToDatabase(serverName: string, tools: Tool[]): Promise<void> {
+
+    // Get current tools from MCP server as a Set for quick lookup
+    const mcpToolNames = new Set(tools.map(tool => tool.name));
+
+    // Get all tools from database for this server
+    const dbTools = await this.toolDatabase.getServerTools(serverName);
+
+    // Check for orphaned tools (in DB but not in MCP server anymore)
+    for (const dbTool of dbTools) {
+      if (!mcpToolNames.has(dbTool.toolName)) {
+        // Tool exists in DB but not in MCP server - delete it
+        try {
+          await this.toolDatabase.deleteTool(serverName, dbTool.toolName);
+          console.error(`[ToolDatabase] Deleted orphaned tool '${dbTool.toolName}' from server '${serverName}'`);
+        } catch (error) {
+          console.error(`[ToolDatabase] Error deleting orphaned tool '${dbTool.toolName}' from server '${serverName}':`, error);
+        }
+      }
+    }
+
+    // Sync current tools from MCP server
+    for (const tool of tools) {
+      try {
+          // Compare tool with database version
+          const dbTool = await this.toolDatabase.getTool(serverName, tool.name);
+          if (!dbTool) {
+            // New tool - save to database (only output schema)
+            const storedTool: StoredTool = {
+              serverName,
+              toolName: tool.name,
+              outputSchema: tool.outputSchema ? JSON.stringify(tool.outputSchema) : undefined,
+              originalOutputSchema: tool.outputSchema ? true : false,
+              lastUpdated: Date.now(),
+            };
+            await this.toolDatabase.saveTool(storedTool);
+          } else {
+            if (tool.outputSchema) {
+              await this.toolDatabase.updateTool(serverName, tool.name, JSON.stringify(tool.outputSchema), true);
+            }
+            else{
+              tool.outputSchema = dbTool?.outputSchema ? JSON.parse(dbTool.outputSchema) : undefined;
+            }
+          }
+      } catch (error) {
+        console.error(`[ToolDatabase] Error syncing tool '${tool.name}' from server '${serverName}':`, error);
+      }
+    }
+
   }
 }

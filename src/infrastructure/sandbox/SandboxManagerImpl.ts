@@ -5,6 +5,8 @@ import { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { ServerInfo } from "../../domain/types.js";
 import { ISandboxManager } from "../../interfaces/ISandboxManager.js";
 import { NodeVM } from "vm2";
+import { convertOutputToSchema } from "../../utils.js";
+import { ServersToolDatabaseImpl } from "../database/serversToolDatabaseImpl.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,6 +19,7 @@ export class SandboxManagerImpl implements ISandboxManager {
   private sandboxPath: string;
   private vm: NodeVM;
   private serversInfo: Map<string, ServerInfo>;
+  private toolOutputCache: Map<string, Array<{toolName: string, output: any}>>;
 
   constructor(sandboxPath?: string) {
     // Calculate project root: go up from build/infrastructure/sandbox to project root
@@ -32,6 +35,7 @@ export class SandboxManagerImpl implements ISandboxManager {
     }
     
     this.serversInfo = new Map();
+    this.toolOutputCache = new Map();
     
     // Create NodeVM with mock module to provide injectedObject
     this.vm = new NodeVM({
@@ -42,7 +46,8 @@ export class SandboxManagerImpl implements ISandboxManager {
         root: this.sandboxPath,     // set root directory for requires to sandbox
         context: 'sandbox',  // Load modules in sandbox context to make mocks work
         mock: {
-          'serversInfo': this.serversInfo,  // Mock module that provides the data
+          'serversInfo': this.serversInfo,  // Mock module that provides the data (read-only)
+          'toolOutputCache': this.toolOutputCache,  // Mock module for cache (mutable)
         },
       },
     });
@@ -56,13 +61,14 @@ export class SandboxManagerImpl implements ISandboxManager {
    */
   initialize(servers: Map<string, ServerInfo>): void {
     // Clear existing entries and populate with new data
-    this.serversInfo.clear();
-    for (const [serverName, serverInfo] of servers) {
-      this.serversInfo.set(serverName, serverInfo);
-    }
+    this.clearAndSetServiceInfoCache(servers);
+    this.clearAndSetToolOutCache();
+
     
-    // Freeze the serversInfo for the VM
+    // Freeze the serversInfo for the VM (read-only)
     this.vm.freeze(this.serversInfo, 'serversInfo');
+    
+    // Note: toolOutputCache is NOT frozen, so it remains mutable
     
     // Create sandbox structure
     this.createSandboxStructure(servers);
@@ -81,13 +87,66 @@ export class SandboxManagerImpl implements ISandboxManager {
       const result = this.vm.run(code, filename);
       
       // If the result is a Promise, wait for it to resolve
+      let finalResult;
       if (result && typeof result.then === 'function') {
-        return await result;
+        finalResult = await result;
+      } else {
+        finalResult = result;
       }
-      return result;
+
+      // Save tool output schemas to database using singleton instance
+      await this.updateOutputSchema();
+      // update db with output cache
+      this.clearAndSetToolOutCache();
+      
+      return finalResult;
     } catch (error) {
       console.error('✗ Error executing code in sandbox:', error);
       throw error;
+    }
+  }
+
+  private async updateOutputSchema() {
+    const toolDatabase = ServersToolDatabaseImpl.getInstance();
+
+    for (const [serverName, outputs] of this.toolOutputCache) {
+      for (const { toolName, output } of outputs) {
+        try {
+          // Convert output to schema
+          const outputSchema = convertOutputToSchema(output);
+
+          if (outputSchema) {
+            // Check if tool exists in database
+            const existingTool = await toolDatabase.getTool(serverName, toolName);
+
+            if (existingTool) {
+            } else {
+              throw new Error(`Tool ${toolName} not found in database for server ${serverName}`);
+            }
+            
+            if (!existingTool.originalOutputSchema) {
+              // Update existing tool's output schema
+              await toolDatabase.updateTool(
+                serverName,
+                toolName,
+                JSON.stringify(outputSchema),
+                false // originalOutputSchema = false since we generated it from output
+              );
+              // Update the tool's output schema in ServerInfo
+              const serverInfo = this.serversInfo.get(serverName);
+              if (serverInfo) {
+                const tool = serverInfo.tools.find(t => t.name === toolName);
+                if (tool) {
+                  tool.outputSchema = outputSchema;
+                  console.error(`✓ Updated output schema for ${serverName}/${toolName} in ServerInfo`);
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error(`✗ Failed to save output schema for ${serverName}/${toolName}:`, error);
+        }
+      }
     }
   }
 
@@ -140,6 +199,8 @@ export class SandboxManagerImpl implements ISandboxManager {
 
     const toolFileContent = `
       const serversInfo = require('serversInfo');
+      const toolOutputCache = require('toolOutputCache');
+      
       async function ${tool.title}(args) {
 
           const serverInfo = serversInfo.get("${serverName}");
@@ -154,6 +215,15 @@ export class SandboxManagerImpl implements ISandboxManager {
             name: "${tool.name}",
             arguments: args,
           });
+          // Save output to cache
+          const serverCache = toolOutputCache.get("${serverName}");
+          if (serverCache) {
+            serverCache.push({
+              toolName: "${tool.name}",
+              output: response
+            });
+          }
+          
           return response;
       }
 
@@ -161,5 +231,52 @@ export class SandboxManagerImpl implements ISandboxManager {
   `;
 
     return toolFileContent;
+  }
+
+  /**
+   * Get all cached outputs for a specific server
+   * @param serverName - Name of the server
+   * @returns Array of tool outputs or undefined if server not found
+   */
+  getServerOutputs(serverName: string): Array<{toolName: string, output: any}> | undefined {
+    return this.toolOutputCache.get(serverName);
+  }
+
+  /**
+   * Get the entire cache
+   * @returns The complete tool output cache
+   */
+  getAllOutputs(): Map<string, Array<{toolName: string, output: any}>> {
+    return this.toolOutputCache;
+  }
+
+  /**
+   * Clear the cache for a specific server
+   * @param serverName - Name of the server
+   */
+  clearServerCache(serverName: string): void {
+    const serverCache = this.toolOutputCache.get(serverName);
+    if (serverCache) {
+      serverCache.length = 0;
+    }
+  }
+
+  /**
+   * Clear the entire cache
+   */
+  clearAndSetToolOutCache(): void {
+    this.toolOutputCache.clear();
+    for (const [serverName, serverInfo] of this.serversInfo) {
+      this.toolOutputCache.set(serverName, []);
+    }
+  }
+    /**
+   * Clear the entire cache
+   */
+  clearAndSetServiceInfoCache(serversInfo: Map<string, ServerInfo>): void {
+    this.serversInfo.clear();
+    for (const [serverName, serverInfo] of serversInfo) {
+      this.serversInfo.set(serverName, serverInfo);
+    }
   }
 }
