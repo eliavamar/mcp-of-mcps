@@ -2,11 +2,12 @@
   "name": "@dbestai/mcp-of-mcps",
   "version": "3.1.0",
   "description": "",
-  "main": "index.js",
+  "main": "./build/index.js",
   "bin": {
     "mcp-of-mcps": "./build/index.js"
   },
   "scripts": {
+    "prepare": "npm run build",
     "start": "node ./build/index.js",
     "build": "tsc && chmod 755 build/index.js"
   },
